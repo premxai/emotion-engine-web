@@ -19,7 +19,7 @@ from django.contrib.staticfiles.templatetags.staticfiles import static
 from .models import *
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 GHOST_TOWN_OUTPUTS = PROJECT_ROOT / "outputs"
 GHOST_TOWN_SPRITES = [
   "Isabella_Rodriguez",
