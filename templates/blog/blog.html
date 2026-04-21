@@ -1,0 +1,860 @@
+{% load staticfiles %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Model Was Never Told What Fear Was</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Merriweather:ital,wght@0,400;0,700;1,400&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Merriweather', Georgia, serif;
+      color: #1a1a1a;
+      background: #fff;
+      line-height: 1.85;
+      font-size: 19px;
+    }
+
+    /* ── Progress bar ─────────────────────────────── */
+    #progress {
+      position: fixed; top: 0; left: 0; height: 3px;
+      background: #c0392b; width: 0%; z-index: 999;
+      transition: width 0.1s linear;
+    }
+
+    /* ── Nav ──────────────────────────────────────── */
+    nav {
+      position: sticky; top: 0;
+      background: rgba(255,255,255,0.96);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid #f0f0f0;
+      padding: 0.9rem 2rem;
+      display: flex; align-items: center; justify-content: space-between;
+      z-index: 100;
+    }
+    .nav-logo {
+      font-family: 'Inter', sans-serif;
+      font-weight: 700; font-size: 0.9rem;
+      color: #c0392b; letter-spacing: -0.02em;
+    }
+    .nav-links {
+      display: flex; gap: 1.5rem; list-style: none;
+    }
+    .nav-links a {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.78rem; font-weight: 500;
+      color: #666; text-decoration: none;
+      letter-spacing: 0.02em;
+    }
+    .nav-links a:hover { color: #c0392b; }
+    .nav-cta {
+      background: #c0392b; color: white !important;
+      padding: 0.4rem 1rem;
+      border-radius: 20px;
+    }
+    .nav-cta:hover { background: #a93226 !important; }
+
+    /* ── Hero ─────────────────────────────────────── */
+    .hero {
+      background: #0d1117;
+      padding: 5rem 2rem 4rem;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: radial-gradient(ellipse at 50% 40%, rgba(192,57,43,0.18) 0%, transparent 70%);
+    }
+    .hero-kicker {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.72rem; font-weight: 700;
+      letter-spacing: 0.2em; text-transform: uppercase;
+      color: #c0392b; margin-bottom: 1.2rem;
+    }
+    .hero h1 {
+      font-family: 'Merriweather', Georgia, serif;
+      font-size: clamp(2rem, 5vw, 3.4rem);
+      font-weight: 700; line-height: 1.15;
+      color: #ffffff; max-width: 780px;
+      margin: 0 auto 1.4rem;
+      letter-spacing: -0.02em;
+    }
+    .hero-sub {
+      font-family: 'Inter', sans-serif;
+      font-size: 1.05rem; color: #9aa3b0;
+      max-width: 620px; margin: 0 auto 2rem;
+      line-height: 1.65;
+    }
+    .hero-meta {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.8rem; color: #6a7280;
+      display: flex; align-items: center;
+      justify-content: center; gap: 1rem; flex-wrap: wrap;
+    }
+    .hero-meta .dot { color: #444; }
+    .hero-meta a { color: #c0392b; text-decoration: none; }
+    .hero-meta a:hover { text-decoration: underline; }
+
+    /* ── Stats bar ────────────────────────────────── */
+    .stats-bar {
+      background: #0d1117;
+      border-top: 1px solid #1e2530;
+      padding: 1.5rem 2rem;
+      display: flex; justify-content: center;
+      gap: 0; flex-wrap: wrap;
+    }
+    .stat-item {
+      flex: 1; min-width: 140px; max-width: 200px;
+      text-align: center; padding: 0.8rem 1.2rem;
+      border-right: 1px solid #1e2530;
+    }
+    .stat-item:last-child { border-right: none; }
+    .stat-num {
+      font-family: 'Inter', sans-serif;
+      font-size: 1.9rem; font-weight: 700;
+      color: #c0392b; line-height: 1;
+      margin-bottom: 0.3rem;
+    }
+    .stat-label {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.72rem; color: #6a7280;
+      line-height: 1.4;
+    }
+
+    /* ── Article body ─────────────────────────────── */
+    article {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 3.5rem 1.5rem 5rem;
+    }
+
+    p { margin-bottom: 1.5rem; }
+
+    /* ── Section headings ─────────────────────────── */
+    h2 {
+      font-family: 'Merriweather', Georgia, serif;
+      font-size: 1.6rem; font-weight: 700;
+      margin: 3.5rem 0 1rem;
+      color: #111; line-height: 1.25;
+      letter-spacing: -0.02em;
+    }
+    h3 {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.72rem; font-weight: 700;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      color: #c0392b; margin: 2.5rem 0 0.7rem;
+    }
+
+    /* ── Drop cap ─────────────────────────────────── */
+    .drop-cap::first-letter {
+      font-size: 4.2rem; float: left;
+      line-height: 0.78; font-weight: 700;
+      margin-right: 0.08em; margin-top: 0.08em;
+      color: #c0392b;
+    }
+
+    /* ── Pull quote ───────────────────────────────── */
+    blockquote {
+      border-left: 4px solid #c0392b;
+      margin: 2.5rem -2rem;
+      padding: 1.2rem 2rem;
+      background: #fff8f7;
+      font-size: 1.2rem;
+      font-style: italic;
+      color: #333;
+      line-height: 1.7;
+    }
+    @media(max-width:760px){ blockquote { margin: 2rem 0; } }
+
+    /* ── Video / GIF clips ────────────────────────── */
+    .clip-wrap {
+      margin: 2.5rem -3rem;
+      background: #0d1117;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    @media(max-width:760px){ .clip-wrap { margin: 2rem 0; border-radius: 8px; } }
+    .clip-wrap img {
+      width: 100%; display: block;
+    }
+    .clip-caption {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.77rem; color: #8a9ab0;
+      padding: 0.8rem 1.4rem;
+      line-height: 1.55;
+      border-top: 1px solid #1e2530;
+    }
+    .clip-caption strong { color: #c0d0e0; }
+
+    /* ── Static figure ────────────────────────────── */
+    figure {
+      margin: 2.5rem -1.5rem;
+      border: 1px solid #f0ece4;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+    @media(max-width:760px){ figure { margin: 2rem 0; } }
+    figure img { width: 100%; display: block; }
+    figcaption {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.76rem; color: #888;
+      padding: 0.75rem 1.2rem;
+      border-top: 1px solid #f0ece4;
+      line-height: 1.5;
+    }
+    figcaption strong { color: #555; }
+
+    /* ── Data table ───────────────────────────────── */
+    .table-wrap {
+      overflow-x: auto;
+      margin: 1.8rem 0;
+      border-radius: 8px;
+      border: 1px solid #eee;
+    }
+    table {
+      width: 100%; border-collapse: collapse;
+      font-family: 'Inter', sans-serif; font-size: 0.83rem;
+    }
+    th {
+      background: #f7f7f5; padding: 0.65rem 1rem;
+      text-align: left; font-weight: 600; color: #333;
+      border-bottom: 2px solid #e0e0d8;
+    }
+    td {
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid #f0f0ec;
+      color: #555;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr.hl td { background: #fff5f3; font-weight: 600; color: #111; }
+    tr.hl td:first-child { border-left: 3px solid #c0392b; padding-left: 0.8rem; }
+    .pv { font-size: 0.78rem; color: #999; font-style: italic; }
+    .pv.win { color: #c0392b; font-weight: 700; font-style: normal; }
+
+    /* ── Callout ──────────────────────────────────── */
+    .callout {
+      background: #f9f7f4;
+      border: 1px solid #e8e0d0;
+      border-radius: 10px;
+      padding: 1.5rem 1.8rem;
+      margin: 2.2rem 0;
+    }
+    .callout-title {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.72rem; font-weight: 700;
+      letter-spacing: 0.15em; text-transform: uppercase;
+      color: #c0392b; margin-bottom: 0.8rem;
+    }
+    .callout code {
+      font-family: 'Fira Mono', 'Courier New', monospace;
+      font-size: 0.88rem; line-height: 2;
+      color: #333;
+    }
+
+    /* ── CTA section ──────────────────────────────── */
+    .cta-section {
+      background: linear-gradient(135deg, #0d1117 0%, #1a0a0a 100%);
+      padding: 4rem 2rem;
+      text-align: center;
+      margin: 4rem -1.5rem -5rem;
+      border-radius: 12px;
+    }
+    .cta-section h2 {
+      color: white; margin-top: 0;
+      font-size: 1.8rem;
+    }
+    .cta-section p {
+      color: #9aa3b0;
+      font-family: 'Inter', sans-serif;
+      font-size: 1rem; max-width: 520px;
+      margin: 0 auto 2rem;
+    }
+    .cta-buttons {
+      display: flex; gap: 1rem;
+      justify-content: center; flex-wrap: wrap;
+    }
+    .btn {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.88rem; font-weight: 600;
+      padding: 0.8rem 1.8rem; border-radius: 6px;
+      text-decoration: none; display: inline-block;
+      transition: all 0.15s;
+    }
+    .btn-primary { background: #c0392b; color: white; }
+    .btn-primary:hover { background: #a93226; }
+    .btn-secondary {
+      background: transparent; color: #9aa3b0;
+      border: 1px solid #2a3340;
+    }
+    .btn-secondary:hover { border-color: #c0392b; color: #c0392b; }
+
+    /* ── Inline code ──────────────────────────────── */
+    code {
+      font-family: 'Fira Mono', 'Courier New', monospace;
+      font-size: 0.82em;
+      background: #f2f2ef; padding: 0.15em 0.4em;
+      border-radius: 3px; color: #c0392b;
+    }
+
+    /* ── Divider ──────────────────────────────────── */
+    .divider {
+      text-align: center; margin: 3rem 0; color: #ccc;
+      font-size: 1.2rem; letter-spacing: 0.5em;
+    }
+
+    /* ── Author bio ───────────────────────────────── */
+    .author-bio {
+      display: flex; gap: 1.2rem; align-items: flex-start;
+      padding: 2rem 0; border-top: 1px solid #f0f0ec;
+      margin-top: 3rem;
+    }
+    .author-avatar {
+      width: 52px; height: 52px; border-radius: 50%;
+      background: linear-gradient(135deg, #c0392b, #8e44ad);
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Inter', sans-serif;
+      font-size: 1.2rem; font-weight: 700; color: white;
+      flex-shrink: 0;
+    }
+    .author-info { font-family: 'Inter', sans-serif; }
+    .author-name { font-weight: 600; font-size: 0.9rem; color: #222; }
+    .author-title { font-size: 0.78rem; color: #888; margin-bottom: 0.4rem; }
+    .author-desc { font-size: 0.82rem; color: #666; line-height: 1.5; }
+  </style>
+</head>
+<body>
+
+<div id="progress"></div>
+
+<!-- ══════════════════════════════════════════ NAV -->
+<nav>
+  <div class="nav-logo">Emotion Engine</div>
+  <ul class="nav-links">
+    <li><a href="#experiment">The Experiment</a></li>
+    <li><a href="#results">Results</a></li>
+    <li><a href="#latent">Latent Space</a></li>
+    <li><a href="http://127.0.0.1:8000/ghost_town/demo/map_demo/0/2/" target="_blank" class="nav-cta">Live Demo →</a></li>
+  </ul>
+</nav>
+
+<!-- ══════════════════════════════════════════ HERO -->
+<div class="hero">
+  <div class="hero-kicker">Research · April 2026 · Ghost Town Simulation</div>
+  <h1>The Model Was Never Told<br>What Fear Was</h1>
+  <p class="hero-sub">
+    A neural network trained only to predict future events independently rediscovers
+    fear, grief, and suspicion — with stronger statistical signatures than hand-coded
+    emotion rules. No labels. No reward shaping. No rules.
+  </p>
+  <div class="hero-meta">
+    <span><strong style="color:#ccc">Prem Babu Kanaparthi</strong></span>
+    <span class="dot">·</span>
+    <span>Rochester Institute of Technology</span>
+    <span class="dot">·</span>
+    <span>12 min read</span>
+    <span class="dot">·</span>
+    <a href="http://127.0.0.1:8000/ghost_town/demo/map_demo/0/2/" target="_blank">Watch live demo →</a>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════ STATS BAR -->
+<div class="stats-bar">
+  <div class="stat-item">
+    <div class="stat-num">205,940</div>
+    <div class="stat-label">agent-step records<br>across 8 seeds</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-num">99.0%</div>
+    <div class="stat-label">shelter rate under threat<br>zero emotion rules</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-num">10⁻¹¹³</div>
+    <div class="stat-label">p-value for fear signature<br>beats hand-coded rules</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-num">25.5%</div>
+    <div class="stat-label">resting grief activation<br>Gallup real humans: 26%</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════ ARTICLE -->
+<article>
+
+  <!-- ── Section 1: The Question ─────────────────── -->
+  <p class="drop-cap" style="margin-top:0.5rem">
+    The 2023 Generative Agents paper asked what agents <em>do</em>. It showed
+    LLM-based agents in a social simulation produce emergent, human-like behaviors —
+    they plan, gossip, form opinions, coordinate. Isabella feels excited about a party.
+    Klaus feels guilty after standing someone up.
+  </p>
+  <p>
+    Those emotional states come from GPT-3 generating text that sounds emotionally
+    plausible. Which is remarkable. But it raises a deeper question: <em>where do
+    the emotions come from?</em> The answer in that system is: the language model's
+    prior over human emotional expression. That's not nothing. But it's also not a
+    theory of emotion.
+  </p>
+  <p>
+    This is an attempt to build one — or at least, to test whether a simpler mechanism
+    can produce the same functional signatures.
+  </p>
+
+  <blockquote>
+    "What if emotions aren't a separate system you layer on top of cognition — but
+    the natural byproduct of a system that's trying to predict what happens next?"
+  </blockquote>
+
+  <p>
+    That's the predictive processing account of emotion, articulated by Friston,
+    Clark, and Barrett over the last two decades. Our experiment tests it directly.
+  </p>
+
+  <div class="divider">· · ·</div>
+
+  <!-- ── Section 2: The Experiment ──────────────── -->
+  <h2 id="experiment">Five conditions. One world. No cheating.</h2>
+
+  <p>
+    We built Ghost Town — a 12-agent survival simulation running on the same
+    engine as the original Generative Agents (Smallville). Agents navigate food
+    scarcity, shifting social relationships, and nightly ghost threats over 72
+    steps (three simulated days).
+  </p>
+  <p>
+    The same 12 agents run all five conditions. Same ghost spawns, same random
+    seeds, same social graph starting state. The only thing that differs is what
+    computes the agent's internal emotional state from its observations.
+  </p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Condition</th>
+          <th>What computes emotion</th>
+          <th>Emotion source</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Baseline</strong></td>
+          <td>Heuristic planner</td>
+          <td>None — pure reflex actions</td>
+        </tr>
+        <tr>
+          <td><strong>Condition A</strong></td>
+          <td>Hand-coded OCC rules</td>
+          <td><code>if ghost_visible: fear += 0.3</code></td>
+        </tr>
+        <tr>
+          <td><strong>Condition B</strong></td>
+          <td>PyTorch imitation model</td>
+          <td>Clones Condition A behavior</td>
+        </tr>
+        <tr>
+          <td><strong>Condition C</strong></td>
+          <td>PyTorch dynamics model</td>
+          <td>Learns emotional state transitions</td>
+        </tr>
+        <tr class="hl">
+          <td><strong>Condition D ← the claim</strong></td>
+          <td>Predictive world model</td>
+          <td>Zero emotion rules — predicts future events only</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>How Condition D works</h3>
+
+  <p>
+    Condition D has a 3-layer MLP encoder that projects a 24-dimensional
+    observation vector into an 8-dimensional latent space. Two heads decode
+    from that latent: one produces an action distribution (cross-entropy loss),
+    one predicts 12 binary future world events (binary cross-entropy loss).
+  </p>
+
+  <div class="callout">
+    <div class="callout-title">12 Future Events the Model Predicts</div>
+    <code>
+      ghost_nearby_t3 · my_death_t5 · health_drop_t3<br>
+      nearby_death_t5 · help_success_t5 · refusal_received_t5<br>
+      shelter_achieved_t2 · storm_onset_t3 · scarcity_t5<br>
+      tie_increase_t5 · graph_tension_increase_t3 · valence_t5
+    </code>
+  </div>
+
+  <p>
+    After training, emotions are read from the prediction head's output —
+    <em>not optimized toward them</em>:
+  </p>
+
+  <div class="callout">
+    <div class="callout-title">Post-hoc emotion derivation — no gradient, no label</div>
+    <code>
+      fear &nbsp;&nbsp;= P(ghost_nearby_t3) + 0.3 × P(health_drop_t3)<br>
+      grief &nbsp;= 0.8 × P(nearby_death_t5) + 0.2 × P(my_death_t5)
+    </code>
+    <p style="font-family:Inter,sans-serif;font-size:0.82rem;color:#888;margin:0.8rem 0 0;line-height:1.5">
+      The model is never told what fear is. The label is applied post-hoc as
+      an interpretation of what the prediction head is already computing.
+    </p>
+  </div>
+
+  <div class="divider">· · ·</div>
+
+  <!-- ── Section 3: Results ──────────────────────── -->
+  <h2 id="results">The results</h2>
+
+  <h3>The world — real tilemap, real simulation logs</h3>
+  <p>
+    These are not mockups. Every agent position, every fear bar, every ghost glow
+    is rendered directly from the simulation's output logs. The tilemap is the
+    actual CuteRPG world the agents run in. Red rings = seeking shelter.
+    Green rings = helping an ally. Gray = normal routine.
+  </p>
+
+  <div class="clip-wrap">
+    <img src="{% static 'assets/blog/sim_night.gif' %}"
+         alt="Ghost Town simulation — upper town, night scene, Condition D">
+    <div class="clip-caption">
+      <strong>Clip 1 — Upper town, Steps 0–24 (Day → Night → Day).</strong>
+      Watch agents scatter and converge on the shelter building (right) the moment
+      sunset hits and ghosts appear. Red bars above sprites = fear level rising.
+      Red rings = actively seeking shelter. The dark overlay deepens as night falls.
+      <strong>Zero emotion rules written.</strong> Condition D inferred this behavior
+      by predicting <code>ghost_nearby_t3 = high</code>.
+    </div>
+  </div>
+
+  <div class="clip-wrap">
+    <img src="{% static 'assets/blog/sim_full.gif' %}"
+         alt="Ghost Town simulation — full 3-day run overview">
+    <div class="clip-caption">
+      <strong>Clip 2 — Full 72-step run (3 simulated days).</strong>
+      The complete arc: calm daytime movement, two ghost-active nights, and the
+      social dynamics that accumulate across them. Agents build trust (or lose it)
+      based on who helped and who refused during the previous night. The emotional
+      memory compounds.
+    </div>
+  </div>
+
+  <h3>Video Clip 3 — Fear signal vs shelter rate</h3>
+  <p>
+    The mechanism made visible: Condition D's internal <code>ghost_nearby_t3</code>
+    prediction confidence (top) drives shelter-seeking directly (bottom) — no rule
+    connecting them. The model predicts danger. That prediction <em>is</em> the fear.
+  </p>
+
+  <div class="clip-wrap">
+    <img src="{% static 'assets/blog/clip2_prediction_shelter.gif' %}"
+         alt="Ghost prediction confidence vs shelter rate animation">
+    <div class="clip-caption">
+      <strong>Clip 3.</strong> Top: Cond D's ghost-threat prediction confidence (orange).
+      Bottom: resulting shelter rate — Cond D (red) vs Baseline (gray dashed).
+      Each confidence spike precedes a shelter spike. Emotion and behavior are connected
+      through prediction, not a rule.
+    </div>
+  </div>
+
+  <h3>Signature 1 — Fear → Shelter</h3>
+  <p>
+    Across 205,940 agent-step records, Condition D achieves the strongest
+    ghost-driven shelter response of all five conditions — despite having zero
+    explicit fear → shelter rule.
+  </p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Condition</th>
+          <th>No ghost</th>
+          <th>Ghost visible</th>
+          <th>Gap</th>
+          <th>Fisher p</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Baseline</td>
+          <td>29.0%</td><td>52.7%</td><td>+23.7pp</td>
+          <td class="pv">3.9×10⁻¹⁶</td>
+        </tr>
+        <tr>
+          <td>Cond A (rules)</td>
+          <td>40.4%</td><td>97.9%</td><td>+57.5pp</td>
+          <td class="pv">1.4×10⁻¹⁰¹</td>
+        </tr>
+        <tr>
+          <td>Cond B (imitation)</td>
+          <td>39.8%</td><td>97.8%</td><td>+58.0pp</td>
+          <td class="pv">8.2×10⁻⁹⁶</td>
+        </tr>
+        <tr>
+          <td>Cond C (dynamics)</td>
+          <td>40.3%</td><td>98.6%</td><td>+58.3pp</td>
+          <td class="pv">8.4×10⁻¹⁰¹</td>
+        </tr>
+        <tr class="hl">
+          <td>Cond D (predictive)</td>
+          <td>40.5%</td><td>99.0%</td><td>+58.5pp</td>
+          <td class="pv win">3.3×10⁻¹¹³</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Signature 2 — Suspicion decays without a timer</h3>
+  <p>
+    Condition A implements forgiveness with an explicit step counter — after 20
+    steps without betrayal, suspicion resets. Condition D receives
+    <code>steps_since_betrayal</code> as a raw observation feature. Whether it
+    uses it to produce a decay curve is entirely learned. It does.
+  </p>
+  <p>
+    Refusal rate drops from <strong>64.6%</strong> (0–5 steps after betrayal) to
+    <strong>35.2%</strong> (forgotten, &gt;25 steps). Fisher p = 8.7×10⁻¹⁴².
+    Matching Condition A's programmed curve — without the program.
+  </p>
+
+  <figure>
+    <img src="{% static 'assets/blog/fig1_behavioral_proof.png' %}"
+         alt="Behavioral proof: shelter rates and suspicion decay">
+    <figcaption>
+      <strong>Figure 1.</strong> Left: shelter rates by condition and ghost visibility.
+      Condition D (pink) reaches 99.0% shelter under threat — stronger than the
+      hand-coded gold standard. Right: suspicion decay after betrayal. The OCC-predicted
+      curve emerges without a single rule. Error bars: 95% Wilson confidence intervals.
+    </figcaption>
+  </figure>
+
+  <div class="divider">· · ·</div>
+
+  <!-- ── Section 4: Latent Space ────────────────── -->
+  <h2 id="latent">What's actually happening inside</h2>
+
+  <p>
+    Behavioral signatures are necessary but not sufficient. A model could produce
+    the right outputs through shallow pattern-matching — memorizing "ghost nearby =
+    go to shelter" — without any internal state that meaningfully represents fear.
+  </p>
+
+  <h3>Video Clip 4 — The emotional landscape over 3 days</h3>
+  <p>
+    Four emotion dimensions (fear, grief, trust, stress) tracked across all three
+    conditions over the full 72-step run. Condition D self-regulates: flat during
+    daytime, sharp at night, genuine social trust built over time.
+    Condition A's hard-coded rules fire chronically — elevated stress even at noon.
+  </p>
+
+  <div class="clip-wrap">
+    <img src="{% static 'assets/blog/clip3_emotion_landscape.gif' %}"
+         alt="4-panel emotion landscape animation">
+    <div class="clip-caption">
+      <strong>Clip 4.</strong> Mean fear, grief, trust, and stress across 12 agents
+      over 72 steps. Condition D (red) shows the cleanest day/night separation —
+      affect rises precisely when threat is real. Condition A (blue) over-fires.
+      Baseline (gray) flatlines. These are real per-step averages from the simulation logs.
+    </div>
+  </div>
+
+  <h3>The 8×12 interpretability matrix</h3>
+  <p>
+    We compute the Pearson correlation between each of the 8 latent dimensions and
+    each of the 12 prediction heads on held-out data. If the latent space is
+    structured, the heatmap should show meaningful patterns. It does.
+  </p>
+
+  <figure>
+    <img src="{% static 'assets/blog/fig2_interpretability.png' %}"
+         alt="8x12 interpretability heatmap">
+    <figcaption>
+      <strong>Figure 2.</strong> Pearson r between Condition D's 8 latent dimensions
+      and its 12 prediction heads. Dim 2 (red border) drives both
+      <code>refuse_help</code> and <code>seek_safe_house</code> — a
+      distrust-plus-threat axis structurally analogous to OCC's fear-suspicion coupling.
+      Dim 7 shows r=−0.795 with <code>ghost_nearby_t3</code>: the model's valence
+      dimension inverts precisely under danger. This structure was not supervised.
+    </figcaption>
+  </figure>
+
+  <blockquote>
+    Seven of eight latent dimensions show significant behavioral differentiation
+    (χ² ≥ 52.6, p &lt; 0.01). The model didn't learn "fear." It learned a compressed
+    representation of anticipated danger — and that representation is what OCC calls fear.
+    The label is ours. The structure is the model's.
+  </blockquote>
+
+  <div class="divider">· · ·</div>
+
+  <!-- ── Section 5: Gallup ───────────────────────── -->
+  <h2>The number that surprised us</h2>
+
+  <p>
+    We want to be careful not to overclaim here. This is a hypothesis-generating
+    observation, not a validation. The measurement instruments differ substantially.
+    The scenario ecology is more threatening than everyday life.
+  </p>
+  <p>
+    With that caveat clearly stated: the Gallup 2024 Global Emotions Report surveyed
+    145,000 people across 144 countries. 26% reported feeling sadness the previous day.
+  </p>
+  <p>
+    Condition D's grief activation during non-threat daytime periods — steps where
+    no ghost is visible, agents are in normal routines — is <strong>25.5%</strong>.
+  </p>
+  <p>
+    A gap of 0.5 percentage points. With zero calibration to human data. Trained
+    entirely in a synthetic survival scenario.
+  </p>
+
+  <figure>
+    <img src="{% static 'assets/blog/fig3_gallup.png' %}"
+         alt="Gallup calibration comparison">
+    <figcaption>
+      <strong>Figure 3.</strong> Agent daytime emotion activation rates vs. Gallup 2024
+      global baselines (dashed lines, N=145,000). Condition D's grief bar nearly
+      touches the 26% sadness reference. Stress and suspicion are elevated due to the
+      high-threat training ecology. Grief — the most scenario-independent signal —
+      shows the cleanest match. Cond A's rules over-fire on all dimensions.
+    </figcaption>
+  </figure>
+
+  <p>
+    We present this as a direction, not a result. The question it opens is more
+    interesting than the number: if you trained this model on real human behavioral
+    traces instead of synthetic simulation data, how close would you get?
+  </p>
+
+  <div class="divider">· · ·</div>
+
+  <!-- ── Section 6: Social ───────────────────────── -->
+  <h2>It's not about survival</h2>
+
+  <p>
+    Condition D has the best survival rate (11.8/12). That's not the point. Emotion
+    in humans isn't a survival optimizer — emotional agents take social risks, help
+    at personal cost, grieve when it doesn't benefit them. The right comparison
+    is how the agents <em>behave</em>, not whether they live.
+  </p>
+
+  <figure>
+    <img src="{% static 'assets/blog/fig4_social.png' %}"
+         alt="Social behavior outcomes">
+    <figcaption>
+      <strong>Figure 4.</strong> Social behavior across conditions. Condition D achieves
+      the highest trust (0.220 vs 0.016 for imitation learning), most rescues (8.9/run),
+      and lowest stress (14.6 vs 47.4 for hand-coded rules). High refusal count alongside
+      high trust means discriminating social cognition — extending trust in stable
+      relationships, refusing in adversarial ones. That combination is the behavioral
+      signature of human-like social intelligence under threat.
+    </figcaption>
+  </figure>
+
+  <div class="divider">· · ·</div>
+
+  <!-- ── Section 7: The honest part ────────────── -->
+  <h2>The honest caveat</h2>
+
+  <p>
+    The hardest critique of this work is fair: the emotion labels are researcher
+    constructions applied post-hoc to prediction outputs. The model doesn't call
+    anything "fear." That's our word for what <code>P(ghost_nearby_t3)</code>
+    represents after training.
+  </p>
+  <p>
+    The defensible claims are: the behavioral signatures match OCC predictions,
+    the latent space is interpretably structured, and the model outperforms explicit
+    rules without being given any. Whether these internal states deserve to be called
+    emotions in a philosophically meaningful sense is a separate question — one worth
+    having.
+  </p>
+
+  <div class="divider">· · ·</div>
+
+  <!-- ── Section 8: Why this matters for Simile ─ -->
+  <h2>Why this might matter for what comes next</h2>
+
+  <p>
+    Simile validates generative agents against General Social Survey responses —
+    demonstrating that agents grounded in real human interviews reproduce survey-level
+    behavioral patterns with 85% accuracy. That's a strong result. It answers:
+    <em>"do agents act like humans say they would act?"</em>
+  </p>
+  <p>
+    This work asks a different question: <em>can agents develop the mechanism of
+    emotional appraisal from their own predictive experience, without human supervision?</em>
+  </p>
+  <p>
+    The two approaches are complementary. One establishes behavioral ground truth
+    from real human data. The other proposes a mechanism by which agents could
+    generate appropriate internal states from experience of a world — not just
+    from what humans say they'd do.
+  </p>
+
+  <blockquote>
+    A natural extension: train a prediction model not on synthetic simulation, but
+    on real human behavioral traces. Simile has that data. If this mechanism produces
+    emotions that match human behavioral patterns at the mechanism level — not just
+    the survey level — that's a stronger claim than either work makes alone.
+  </blockquote>
+
+  <p>
+    That's the conversation I'm hoping to have.
+  </p>
+
+  <!-- ── CTA ─────────────────────────────────────── -->
+  <div class="cta-section">
+    <h2>See it live</h2>
+    <p>
+      Five conditions running side-by-side in real time. Same seed, same agents,
+      five completely different emotional stories.
+    </p>
+    <div class="cta-buttons">
+      <a href="http://127.0.0.1:8000/ghost_town/demo/map_demo/0/2/"
+         target="_blank" class="btn btn-primary">Watch the Demo →</a>
+      <a href="http://127.0.0.1:8000/whitepaper/"
+         target="_blank" class="btn btn-secondary">Read the Preprint</a>
+    </div>
+    <p style="margin-top:2rem;font-size:0.82rem;color:#4a5568">
+      Questions, collaborations, or just want to talk about whether machines can feel?<br>
+      <a href="mailto:pk1531@rit.edu" style="color:#c0392b">pk1531@rit.edu</a>
+    </p>
+  </div>
+
+  <!-- ── Author ──────────────────────────────────── -->
+  <div class="author-bio">
+    <div class="author-avatar">PK</div>
+    <div class="author-info">
+      <div class="author-name">Prem Babu Kanaparthi</div>
+      <div class="author-title">MS in Artificial Intelligence · Rochester Institute of Technology</div>
+      <div class="author-desc">
+        Building emotion engines for generative agents. This project extends the
+        open-source Generative Agents codebase (Park et al. 2023) with an empirical
+        comparison of five emotion architectures across 205,940 agent-step records.
+      </div>
+    </div>
+  </div>
+
+</article>
+
+<script>
+  // Progress bar
+  window.addEventListener('scroll', () => {
+    const doc = document.documentElement;
+    const h   = doc.scrollHeight - doc.clientHeight;
+    const pct = (window.scrollY / h) * 100;
+    document.getElementById('progress').style.width = pct + '%';
+  });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "sim_code": "demo_condition_d",
+  "maze_name": "ghost_town",
+  "sec_per_step": 300,
+  "day_index": 4,
+  "weather": "clear",
+  "condition": "condition_d",
+  "event_count": 703
+}

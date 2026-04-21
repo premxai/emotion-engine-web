@@ -1,0 +1,658 @@
+{% load staticfiles %}
+
+<script type="text/javascript">
+
+  // -------------------------------------------------------------------------
+  // PREAMBLE
+  // -------------------------------------------------------------------------
+  let step = {{step}};
+  let sim_code = "{{sim_code}}";
+  let step_size = {{sec_per_step}} * 1000;
+  let worldConfig = {{ world_config_json|safe }};
+
+  // Full-screen responsive Phaser config — no fixed width/height
+  const config = {
+    type: Phaser.AUTO,
+    width: window.innerWidth,
+    height: window.innerHeight,
+    parent: "game-container",
+    pixelArt: true,
+    physics: {
+      default: "arcade",
+      arcade: { gravity: { y: 0 } }
+    },
+    scene: { preload: preload, create: create, update: update },
+    scale: {
+      mode: Phaser.Scale.RESIZE,
+      autoCenter: Phaser.Scale.CENTER_BOTH
+    }
+  };
+
+  const game = new Phaser.Game(config);
+  let player;
+  let mainCamera = null;
+  let cursors;
+
+  // -------------------------------------------------------------------------
+  // KIOSK CONTROLS
+  // -------------------------------------------------------------------------
+  let kiosk_paused = false;
+  let _drag_start_x = 0, _drag_start_y = 0;
+  let _is_dragging = false;
+
+  function kioskTogglePause() {
+    kiosk_paused = !kiosk_paused;
+    var banner = document.getElementById("paused-banner");
+    if (kiosk_paused) {
+      if (banner) banner.style.display = "block";
+    } else {
+      if (banner) banner.style.display = "none";
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // PERSONA / GHOST TOWN STATE
+  // -------------------------------------------------------------------------
+  let persona_names = {{ persona_init_pos|safe }};
+  var spawn_tile_loc = {};
+  for (var key in persona_names) { spawn_tile_loc[key] = persona_names[key]; }
+
+  var personas = {};
+  var pronunciatios = {};
+  var speech_bubbles = {};
+  var ghost_markers = {};
+  let anims_direction;
+
+  // Ghost Town visual state
+  var current_affect_state = {};
+  var emotion_hud_graphics = {};
+  var storm_overlay = null;
+  var danger_radius_gfx = null;
+  var social_graph_gfx = null;
+  var is_night_now = false;
+  var ghosts_current = [];
+  var prev_alive_state = {};
+  var activeToasts = [];
+  var nightOverlay = null;
+  var ghostGlowGfx = null;
+  var gt_scene = null;
+  var is_condition_d = false;
+  var total_steps = 0;
+
+  // Rich data from full_replay.json
+  var affect_timeline = {};
+  var event_log_data = [];
+  var social_graph_timeline = {};
+
+  var EMOTION_LABELS_STANDARD = ["fear","stress","trust","grief","suspicion","relief"];
+  var EMOTION_LABELS_D = ["ghost_p","nearby_death_p","help_p","shelter_p","storm_p","valence"];
+  var EMOTION_COLORS = {
+    "fear":0xff4444,"stress":0xff8800,"trust":0x44cc44,
+    "grief":0x4488ff,"suspicion":0xaa44cc,"relief":0x44cccc,
+    "ghost_p":0xff4444,"nearby_death_p":0x4488ff,"help_p":0x44cc44,
+    "shelter_p":0x44cccc,"storm_p":0xff8800,"valence":0xffcc00
+  };
+
+  if (worldConfig.supports_ghosts) {
+    fetch('/ghost_town/full_replay/' + sim_code + '/')
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .catch(function() { return null; })
+      .then(function(data) {
+        if (!data) return;
+        affect_timeline = data.affect_timeline || {};
+        event_log_data = data.events || [];
+        social_graph_timeline = data.social_graph_timeline || {};
+        is_condition_d = (data.condition === 'condition_d');
+        total_steps = data.total_steps || total_steps;
+      });
+  }
+
+  // Stubs for functions referenced by shared helpers
+  function toggleSocialGraph() {}
+  function setReplaySpeed(mult) {
+    var m = parseFloat(mult) || 1.0;
+    execute_count_max = Math.max(16, Math.round(300 / m));
+  }
+  function jumpToStep(target) {
+    step = Math.max(0, Math.min(parseInt(target), total_steps - 1));
+    execute_count = execute_count_max + 1;
+  }
+
+  // Night alpha curve
+  function getNightAlpha(curr_time_str) {
+    var m = (curr_time_str || "").match(/(\d+):00\s*(AM|PM)/i);
+    if (!m) return 0;
+    var h = parseInt(m[1]) % 12 + (m[2].toUpperCase() === 'PM' ? 12 : 0);
+    var curve = {8:0,9:0,10:0,11:0,12:0,13:0,14:0,15:0,16:0,17:0,
+                 18:0.15,19:0.28,20:0.40,21:0.52,22:0.52,23:0.52,
+                 0:0.52,1:0.52,2:0.52,3:0.52,4:0.52,5:0.20,6:0.10,7:0.03};
+    return curve[h] !== undefined ? curve[h] : 0;
+  }
+
+  function showToast(text, bgColor, wx, wy) {
+    if (!gt_scene) return;
+    var t = gt_scene.add.text(wx, wy, text, {
+      fontSize: '13px', fontFamily: 'sans-serif',
+      color: '#ffffff', backgroundColor: bgColor,
+      padding: {x: 7, y: 4}
+    }).setDepth(200).setOrigin(0.5, 1);
+    activeToasts.push({obj: t, born: gt_scene.time.now, life: 2800, baseY: wy});
+  }
+
+  let pre_anims_direction;
+  let pre_anims_direction_dict = {};
+  let initial_focus_tile = [0, 0];
+  let persona_key_list = Object.keys(spawn_tile_loc);
+  if (persona_key_list.length > 0) { initial_focus_tile = spawn_tile_loc[persona_key_list[0]]; }
+
+  let tile_width = 32;
+  let movement_speed = 2;
+  // 3× speed: execute_count_max = 100 (300 / 3)
+  var execute_count_max = 100;
+  var execute_count = execute_count_max;
+  let movement_target = {};
+  for (var _k in spawn_tile_loc) {
+    movement_target[_k] = [spawn_tile_loc[_k][0] * tile_width, spawn_tile_loc[_k][1] * tile_width];
+  }
+
+  let all_movement = {{ all_movement|safe }};
+  total_steps = Object.keys(all_movement).length;
+
+  let start_datetime = new Date(Date.parse("{{start_datetime}}"));
+  var datetime_options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+  if (worldConfig.supports_ghosts && all_movement[step] && all_movement[step]["meta"]) {
+    document.getElementById("game-time-content").innerHTML = all_movement[step]["meta"]["curr_time"];
+  }
+
+  // -------------------------------------------------------------------------
+  // PRELOAD
+  // -------------------------------------------------------------------------
+  function preload() {
+    this.load.crossOrigin = '';
+    this.load.image("blocks_1", "{% static world_config.asset_root|add:'/visuals/map_assets/blocks/blocks_1.png' %}");
+    this.load.image("walls", "{% static world_config.asset_root|add:'/visuals/map_assets/v1/Room_Builder_32x32.png' %}");
+    this.load.image("interiors_pt1", "{% static world_config.asset_root|add:'/visuals/map_assets/v1/interiors_pt1.png' %}");
+    this.load.image("interiors_pt2", "{% static world_config.asset_root|add:'/visuals/map_assets/v1/interiors_pt2.png' %}");
+    this.load.image("interiors_pt3", "{% static world_config.asset_root|add:'/visuals/map_assets/v1/interiors_pt3.png' %}");
+    this.load.image("interiors_pt4", "{% static world_config.asset_root|add:'/visuals/map_assets/v1/interiors_pt4.png' %}");
+    this.load.image("interiors_pt5", "{% static world_config.asset_root|add:'/visuals/map_assets/v1/interiors_pt5.png' %}");
+    this.load.image("CuteRPG_Field_B", "{% static world_config.asset_root|add:'/visuals/map_assets/cute_rpg_word_VXAce/tilesets/CuteRPG_Field_B.png' %}");
+    this.load.image("CuteRPG_Field_C", "{% static world_config.asset_root|add:'/visuals/map_assets/cute_rpg_word_VXAce/tilesets/CuteRPG_Field_C.png' %}");
+    this.load.image("CuteRPG_Harbor_C", "{% static world_config.asset_root|add:'/visuals/map_assets/cute_rpg_word_VXAce/tilesets/CuteRPG_Harbor_C.png' %}");
+    this.load.image("CuteRPG_Village_B", "{% static world_config.asset_root|add:'/visuals/map_assets/cute_rpg_word_VXAce/tilesets/CuteRPG_Village_B.png' %}");
+    this.load.image("CuteRPG_Forest_B", "{% static world_config.asset_root|add:'/visuals/map_assets/cute_rpg_word_VXAce/tilesets/CuteRPG_Forest_B.png' %}");
+    this.load.image("CuteRPG_Desert_C", "{% static world_config.asset_root|add:'/visuals/map_assets/cute_rpg_word_VXAce/tilesets/CuteRPG_Desert_C.png' %}");
+    this.load.image("CuteRPG_Mountains_B", "{% static world_config.asset_root|add:'/visuals/map_assets/cute_rpg_word_VXAce/tilesets/CuteRPG_Mountains_B.png' %}");
+    this.load.image("CuteRPG_Desert_B", "{% static world_config.asset_root|add:'/visuals/map_assets/cute_rpg_word_VXAce/tilesets/CuteRPG_Desert_B.png' %}");
+    this.load.image("CuteRPG_Forest_C", "{% static world_config.asset_root|add:'/visuals/map_assets/cute_rpg_word_VXAce/tilesets/CuteRPG_Forest_C.png' %}");
+    this.load.tilemapTiledJSON("map", "{% static world_config.tilemap_json %}");
+    this.load.atlas("atlas", "{% static 'assets/characters/Yuriko_Yamamoto.png' %}",
+                             "{% static 'assets/characters/atlas.json' %}");
+    {% for p in persona_names %}
+      {% with 'assets/characters/'|add:p.sprite_underscore|add:'.png' as image_static %}
+        this.load.atlas("{{p.underscore}}", "{% static image_static %}",
+                                            "{% static 'assets/characters/atlas.json' %}");
+      {% endwith %}
+    {% endfor %}
+    this.load.image('speech_bubble', "{% static 'assets/speech_bubble/v3.png' %}");
+  }
+
+  // -------------------------------------------------------------------------
+  // CREATE
+  // -------------------------------------------------------------------------
+  function create() {
+    var scene = this;
+    const map = this.make.tilemap({ key: "map" });
+
+    const collisions    = map.addTilesetImage("blocks", "blocks_1");
+    const walls         = map.addTilesetImage("Room_Builder_32x32", "walls");
+    const interiors_pt1 = map.addTilesetImage("interiors_pt1", "interiors_pt1");
+    const interiors_pt2 = map.addTilesetImage("interiors_pt2", "interiors_pt2");
+    const interiors_pt3 = map.addTilesetImage("interiors_pt3", "interiors_pt3");
+    const interiors_pt4 = map.addTilesetImage("interiors_pt4", "interiors_pt4");
+    const interiors_pt5 = map.addTilesetImage("interiors_pt5", "interiors_pt5");
+    const CuteRPG_Field_B    = map.addTilesetImage("CuteRPG_Field_B",    "CuteRPG_Field_B");
+    const CuteRPG_Field_C    = map.addTilesetImage("CuteRPG_Field_C",    "CuteRPG_Field_C");
+    const CuteRPG_Harbor_C   = map.addTilesetImage("CuteRPG_Harbor_C",   "CuteRPG_Harbor_C");
+    const CuteRPG_Village_B  = map.addTilesetImage("CuteRPG_Village_B",  "CuteRPG_Village_B");
+    const CuteRPG_Forest_B   = map.addTilesetImage("CuteRPG_Forest_B",   "CuteRPG_Forest_B");
+    const CuteRPG_Desert_C   = map.addTilesetImage("CuteRPG_Desert_C",   "CuteRPG_Desert_C");
+    const CuteRPG_Mountains_B= map.addTilesetImage("CuteRPG_Mountains_B","CuteRPG_Mountains_B");
+    const CuteRPG_Desert_B   = map.addTilesetImage("CuteRPG_Desert_B",   "CuteRPG_Desert_B");
+    const CuteRPG_Forest_C   = map.addTilesetImage("CuteRPG_Forest_C",   "CuteRPG_Forest_C");
+
+    let tileset_group_1 = [CuteRPG_Field_B, CuteRPG_Field_C, CuteRPG_Harbor_C, CuteRPG_Village_B,
+                           CuteRPG_Forest_B, CuteRPG_Desert_C, CuteRPG_Mountains_B, CuteRPG_Desert_B,
+                           CuteRPG_Forest_C, interiors_pt1, interiors_pt2, interiors_pt3,
+                           interiors_pt4, interiors_pt5, walls];
+    map.createLayer("Bottom Ground",           tileset_group_1, 0, 0);
+    map.createLayer("Exterior Ground",         tileset_group_1, 0, 0);
+    map.createLayer("Exterior Decoration L1",  tileset_group_1, 0, 0);
+    map.createLayer("Exterior Decoration L2",  tileset_group_1, 0, 0);
+    map.createLayer("Interior Ground",         tileset_group_1, 0, 0);
+    map.createLayer("Wall",                    [CuteRPG_Field_C, walls], 0, 0);
+    map.createLayer("Interior Furniture L1",   tileset_group_1, 0, 0);
+    map.createLayer("Interior Furniture L2",   tileset_group_1, 0, 0);
+    const foregroundL1 = map.createLayer("Foreground L1", tileset_group_1, 0, 0);
+    const foregroundL2 = map.createLayer("Foreground L2", tileset_group_1, 0, 0);
+    const collisionsLayer = map.createLayer("Collisions", collisions, 0, 0);
+    collisionsLayer.setCollisionByProperty({ collide: true });
+    collisionsLayer.setDepth(-1);
+    foregroundL1.setDepth(2);
+    foregroundL2.setDepth(2);
+
+    // Camera — invisible player sprite as anchor
+    player = this.physics.add.sprite(
+      initial_focus_tile[0] * tile_width + tile_width / 2,
+      initial_focus_tile[1] * tile_width + tile_width,
+      "atlas", "down"
+    ).setSize(30, 40).setOffset(0, 0);
+    player.setDepth(-1);
+
+    const camera = this.cameras.main;
+    mainCamera = camera;
+    camera.startFollow(player);
+    camera.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
+    // Responsive zoom: fit roughly the same world area regardless of screen size
+    var base_zoom = Math.min(window.innerWidth, window.innerHeight) / 600;
+    camera.setZoom(Math.max(0.5, Math.min(1.4, base_zoom)));
+
+    // Keyboard cursors (desktop fallback, unused on mobile)
+    cursors = this.input.keyboard.createCursorKeys();
+
+    // ---- TOUCH DRAG TO PAN ----
+    var _pointer_down_x = 0, _pointer_down_y = 0;
+    var _cam_scroll_x_at_down = 0, _cam_scroll_y_at_down = 0;
+    var _drag_dist = 0;
+
+    scene.input.on('pointerdown', function(pointer) {
+      _pointer_down_x = pointer.x;
+      _pointer_down_y = pointer.y;
+      _cam_scroll_x_at_down = mainCamera.scrollX;
+      _cam_scroll_y_at_down = mainCamera.scrollY;
+      _drag_dist = 0;
+      mainCamera.stopFollow();
+    });
+
+    scene.input.on('pointermove', function(pointer) {
+      if (!pointer.isDown) return;
+      var dx = pointer.x - _pointer_down_x;
+      var dy = pointer.y - _pointer_down_y;
+      _drag_dist = Math.sqrt(dx * dx + dy * dy);
+      mainCamera.scrollX = _cam_scroll_x_at_down - dx / mainCamera.zoom;
+      mainCamera.scrollY = _cam_scroll_y_at_down - dy / mainCamera.zoom;
+    });
+
+    // ---- TAP TO PAUSE/PLAY ----
+    scene.input.on('pointerup', function(pointer) {
+      if (_drag_dist < 8) {
+        kioskTogglePause();
+      }
+    });
+
+    // Personas
+    for (let i = 0; i < Object.keys(spawn_tile_loc).length; i++) {
+      let persona_name = Object.keys(spawn_tile_loc)[i];
+      let start_pos = [
+        spawn_tile_loc[persona_name][0] * tile_width + tile_width / 2,
+        spawn_tile_loc[persona_name][1] * tile_width + tile_width
+      ];
+      let new_sprite = this.physics.add.sprite(start_pos[0], start_pos[1], persona_name, "down")
+                           .setSize(30, 40).setOffset(0, 0);
+      new_sprite.displayWidth = 40;
+      new_sprite.scaleY = new_sprite.scaleX;
+
+      personas[persona_name] = new_sprite;
+      speech_bubbles[persona_name] = this.add.image(
+        new_sprite.body.x, new_sprite.body.y - 30, 'speech_bubble'
+      ).setDepth(3);
+      speech_bubbles[persona_name].displayWidth = 130;
+      speech_bubbles[persona_name].displayHeight = 58;
+
+      pronunciatios[persona_name] = this.add.text(
+        new_sprite.body.x - 6, new_sprite.body.y - 42, "🦁",
+        { font: "24px monospace", fill: "#000000", padding: {x: 8, y: 8} }
+      ).setDepth(3);
+    }
+
+    if (worldConfig.supports_ghosts) {
+      for (var pname in spawn_tile_loc) {
+        emotion_hud_graphics[pname] = this.add.graphics().setDepth(5);
+      }
+      storm_overlay = this.add.rectangle(0, 0, 2000, 1200, 0x000022, 0)
+        .setScrollFactor(0).setDepth(1).setOrigin(0, 0);
+      danger_radius_gfx = this.add.graphics().setDepth(3);
+      social_graph_gfx  = this.add.graphics().setDepth(1);
+      nightOverlay = this.add.rectangle(0, 0, 2000, 1200, 0x000033, 0)
+        .setScrollFactor(0).setDepth(1.5).setOrigin(0, 0);
+      ghostGlowGfx = this.add.graphics().setDepth(3);
+      gt_scene = this;
+      updateStepDisplay(step, total_steps);
+    }
+
+    // Animations
+    const anims = this.anims;
+    for (let i = 0; i < Object.keys(persona_names).length; i++) {
+      let persona_name = Object.keys(persona_names)[i];
+      anims.create({ key: persona_name + "-left-walk",
+        frames: anims.generateFrameNames(persona_name, {prefix:"left-walk.", start:0, end:3, zeroPad:3}),
+        frameRate: 4, repeat: -1 });
+      anims.create({ key: persona_name + "-right-walk",
+        frames: anims.generateFrameNames(persona_name, {prefix:"right-walk.", start:0, end:3, zeroPad:3}),
+        frameRate: 4, repeat: -1 });
+      anims.create({ key: persona_name + "-down-walk",
+        frames: anims.generateFrameNames(persona_name, {prefix:"down-walk.", start:0, end:3, zeroPad:3}),
+        frameRate: 4, repeat: -1 });
+      anims.create({ key: persona_name + "-up-walk",
+        frames: anims.generateFrameNames(persona_name, {prefix:"up-walk.", start:0, end:3, zeroPad:3}),
+        frameRate: 4, repeat: -1 });
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // UPDATE
+  // -------------------------------------------------------------------------
+  function update(time, delta) {
+    // Play/pause buttons wired to nothing — kiosk uses tap gesture
+    var play_button  = document.getElementById("play_button");
+    var pause_button = document.getElementById("pause_button");
+
+    // Toast fade + float
+    for (var _ti = activeToasts.length - 1; _ti >= 0; _ti--) {
+      var _toast = activeToasts[_ti];
+      var _age = time - _toast.born;
+      if (_age > _toast.life) { _toast.obj.destroy(); activeToasts.splice(_ti, 1); continue; }
+      _toast.obj.setAlpha(Math.max(0, 1 - _age / _toast.life));
+      _toast.obj.y = _toast.baseY - (_age / _toast.life) * 30;
+    }
+
+    // *** MOVING PERSONAS ***
+    if (!all_movement[step]) return;
+    for (let i = 0; i < Object.keys(personas).length; i++) {
+      let curr_persona_name  = Object.keys(personas)[i];
+      let curr_persona       = personas[curr_persona_name];
+      let curr_pronunciatio  = pronunciatios[curr_persona_name];
+      let curr_speech_bubble = speech_bubbles[curr_persona_name];
+      let curr_payload = all_movement[step][curr_persona_name.replace(/_/g, " ")] || null;
+
+      if (curr_persona_name.replace(/_/g, " ") in all_movement[step]) {
+        if (execute_count == execute_count_max) {
+          let curr_x = curr_payload["movement"][0];
+          let curr_y = curr_payload["movement"][1];
+          movement_target[curr_persona_name] = [curr_x * tile_width, curr_y * tile_width];
+
+          // Speech bubble
+          var bubble_text;
+          if (worldConfig.supports_ghosts && curr_payload["goal"]) {
+            var goal_emoji = {"shelter":"🏠","flee":"🏃","gather_supplies":"🎒","patrol":"🔍",
+                              "routine":"🚶","help":"🤝","rest":"💤","work":"⚒️","mourn":"😢",
+                              "seek_hospital":"🏥","gather":"🎒","hide":"🙈"};
+            var g = curr_payload["goal"] || "routine";
+            var g_emoji = goal_emoji[g] || "🚶";
+            var fear_val   = parseFloat(curr_payload["fear"]   || 0);
+            var stress_val = parseFloat(curr_payload["stress"] || 0);
+            var grief_val  = parseFloat(curr_payload["grief"]  || 0);
+            var last_ghost = curr_payload["last_night_ghost_seen"];
+            var last_death = curr_payload["last_night_death_nearby"];
+            var deaths_seen = parseInt(curr_payload["ally_deaths_witnessed"] || 0);
+            var state_icon = "";
+            if      (fear_val > 0.5)               state_icon = "😨";
+            else if (grief_val > 20 || last_death)  state_icon = "😢";
+            else if (deaths_seen >= 2)              state_icon = "😔";
+            else if (last_ghost)                    state_icon = "😟";
+            else if (stress_val > 40)               state_icon = "😰";
+            else if (fear_val > 0.2)                state_icon = "😟";
+            bubble_text = g_emoji + (state_icon ? state_icon : "");
+          } else {
+            bubble_text = curr_payload["pronunciatio"] || "🚶";
+          }
+          pronunciatios[curr_persona_name].setText(bubble_text);
+
+          if (worldConfig.supports_ghosts) {
+            updatePersonaState(curr_persona, curr_payload);
+            // Death flash
+            var _now_alive = curr_payload["alive"] !== false;
+            var _was_alive = prev_alive_state[curr_persona_name] !== false;
+            if (_was_alive && !_now_alive && gt_scene) {
+              (function(sp, n) {
+                sp.setTint(0xff0000);
+                gt_scene.time.delayedCall(400, function(){ sp.setTint(0x880000); });
+                gt_scene.time.delayedCall(800, function(){ sp.clearTint(); });
+                showToast('💀 ' + n.replace(/_/g, " ") + ' caught!', '#990000',
+                          sp.body.x, sp.body.y - 40);
+              })(curr_persona, curr_persona_name);
+            }
+            prev_alive_state[curr_persona_name] = _now_alive;
+            if (!_now_alive) {
+              pronunciatios[curr_persona_name].setText('💀');
+            } else if (is_night_now) {
+              var _g_goal = curr_payload["goal"] || "";
+              var _g_fear = parseFloat(curr_payload["fear"] || 0);
+              if ((_g_goal === 'rest' || _g_goal === 'shelter') && _g_fear < 0.15) {
+                pronunciatios[curr_persona_name].setText('💤');
+              }
+            }
+          }
+        }
+
+        if (execute_count > 0) {
+          if (curr_persona.body.x < movement_target[curr_persona_name][0]) {
+            curr_persona.body.x += movement_speed; anims_direction = "r";
+            pre_anims_direction_dict[curr_persona_name] = "r";
+          } else if (curr_persona.body.x > movement_target[curr_persona_name][0]) {
+            curr_persona.body.x -= movement_speed; anims_direction = "l";
+            pre_anims_direction_dict[curr_persona_name] = "l";
+          } else if (curr_persona.body.y < movement_target[curr_persona_name][1]) {
+            curr_persona.body.y += movement_speed; anims_direction = "d";
+            pre_anims_direction_dict[curr_persona_name] = "d";
+          } else if (curr_persona.body.y > movement_target[curr_persona_name][1]) {
+            curr_persona.body.y -= movement_speed; anims_direction = "u";
+            pre_anims_direction_dict[curr_persona_name] = "u";
+          } else {
+            anims_direction = "";
+          }
+
+          curr_pronunciatio.x  = curr_persona.body.x + 18;
+          curr_pronunciatio.y  = curr_persona.body.y - 42 - 25;
+          curr_speech_bubble.x = curr_persona.body.x + 80;
+          curr_speech_bubble.y = curr_persona.body.y - 39;
+
+          if (worldConfig.supports_ghosts && emotion_hud_graphics[curr_persona_name]) {
+            drawEmotionHUD(
+              emotion_hud_graphics[curr_persona_name], curr_persona,
+              current_affect_state[curr_persona_name] || {},
+              curr_payload, is_condition_d
+            );
+          }
+
+          if      (anims_direction == "l") curr_persona.anims.play(curr_persona_name + "-left-walk",  true);
+          else if (anims_direction == "r") curr_persona.anims.play(curr_persona_name + "-right-walk", true);
+          else if (anims_direction == "u") curr_persona.anims.play(curr_persona_name + "-up-walk",    true);
+          else if (anims_direction == "d") curr_persona.anims.play(curr_persona_name + "-down-walk",  true);
+        }
+      } else {
+        curr_persona.anims.stop();
+        if (pre_anims_direction_dict[curr_persona_name] == "l") curr_persona.setTexture(curr_persona_name, "left");
+        else if (pre_anims_direction_dict[curr_persona_name] == "r") curr_persona.setTexture(curr_persona_name, "right");
+        else if (pre_anims_direction_dict[curr_persona_name] == "u") curr_persona.setTexture(curr_persona_name, "up");
+        else curr_persona.setTexture(curr_persona_name, "down");
+      }
+    }
+
+    // === GHOST GLOW + AGENT WARNING RINGS ===
+    if (worldConfig.supports_ghosts && ghostGlowGfx) {
+      ghostGlowGfx.clear();
+      if (ghosts_current.length > 0) {
+        var _pulse = 0.5 + 0.5 * Math.sin(time / 280);
+        for (var _ggi = 0; _ggi < ghosts_current.length; _ggi++) {
+          var _gloc = ghosts_current[_ggi]["location"];
+          var _gx = _gloc[0] * tile_width + tile_width / 2;
+          var _gy = _gloc[1] * tile_width + tile_width / 2;
+          ghostGlowGfx.fillStyle(0xff2200, 0.10 + 0.07 * _pulse);
+          ghostGlowGfx.fillCircle(_gx, _gy, 5 * tile_width);
+          ghostGlowGfx.fillStyle(0xff8800, 0.20 + 0.12 * _pulse);
+          ghostGlowGfx.fillCircle(_gx, _gy, 2.5 * tile_width);
+        }
+        for (var _pn in personas) {
+          if (prev_alive_state[_pn] === false) continue;
+          var _mt = movement_target[_pn] || [0, 0];
+          var _near = ghosts_current.some(function(_g) {
+            return Math.abs(_g.location[0] - _mt[0] / tile_width) < 5
+                && Math.abs(_g.location[1] - _mt[1] / tile_width) < 5;
+          });
+          if (_near) {
+            ghostGlowGfx.lineStyle(2, 0xff0000, 0.5 + 0.4 * _pulse);
+            ghostGlowGfx.strokeCircle(personas[_pn].body.x + 16, personas[_pn].body.y + 16, 22);
+          }
+        }
+        for (var _gm in ghost_markers) {
+          if (ghost_markers[_gm].visible) ghost_markers[_gm].setScale(0.9 + 0.15 * _pulse);
+        }
+      }
+    }
+
+    if (worldConfig.supports_ghosts && execute_count == execute_count_max) {
+      syncGhostMarkers(this, all_movement[step]["ghosts"] || []);
+
+      if (affect_timeline && affect_timeline[step]) {
+        var step_affect = affect_timeline[step];
+        for (var pn in personas) {
+          var dn = pn.replace(/_/g, " ");
+          current_affect_state[pn] = step_affect[dn] || step_affect[pn] || {};
+        }
+      }
+
+      var step_meta_now = (all_movement[step] && all_movement[step]["meta"]) ? all_movement[step]["meta"] : {};
+      var weather_now   = step_meta_now["weather"] || "";
+      var storm_sev_now = parseFloat(step_meta_now["storm_severity"] || 0);
+      if (storm_overlay) {
+        storm_overlay.setAlpha(weather_now === "storm" ? Math.min(0.45, 0.08 + storm_sev_now * 0.37) : 0);
+      }
+
+      var _step_time_str = step_meta_now["curr_time"] || "";
+      is_night_now = getNightAlpha(_step_time_str) > 0.3;
+      if (nightOverlay) nightOverlay.setAlpha(getNightAlpha(_step_time_str));
+      ghosts_current = (all_movement[step] && all_movement[step]["ghosts"]) ? all_movement[step]["ghosts"] : [];
+      if (danger_radius_gfx) danger_radius_gfx.clear();
+
+      // Event toasts
+      (event_log_data || []).filter(function(e){ return parseInt(e.step||0) === step; })
+        .slice(0, 3).forEach(function(e) {
+          var _ex = e.location ? e.location[0]*tile_width + tile_width/2 : 700;
+          var _ey = e.location ? e.location[1]*tile_width - 20 : 250;
+          var _et = e.event_type || "";
+          var _ed = (e.description || "").toLowerCase();
+          if      (_et === 'warning')       showToast('⚠️ ' + (e.actor||'').split(' ')[0] + ': "Stay inside tonight!"', '#664400', _ex, _ey);
+          else if (_et === 'ghost_spawn')   showToast('🌑 Ghost emerges!', '#550000', _ex, _ey);
+          else if (_et === 'ghost_encounter' || _et === 'ghost_attack' || _et === 'ghost_sighting') showToast('👻 Ghost attack!', '#cc0000', _ex, _ey);
+          else if (_et === 'death')         showToast('💀 ' + (e.actor||'Agent') + ' caught!', '#660000', _ex, _ey);
+          else if (_et === 'storm' || _ed.includes('storm approach')) showToast('⛈️ Storm incoming!', '#333355', 700, 100);
+        });
+
+      // Update kiosk step counter HUD
+      var _el_step = document.getElementById("kiosk-step");
+      if (_el_step) _el_step.textContent = "Step " + step + " / " + total_steps;
+      updateStepDisplay(step, total_steps);
+
+      // Update game-time-content for MutationObserver → kiosk-time
+      if (all_movement[step] && all_movement[step]["meta"]) {
+        document.getElementById("game-time-content").innerHTML = all_movement[step]["meta"]["curr_time"];
+      }
+    }
+
+    if (execute_count == 0) {
+      for (let i = 0; i < Object.keys(personas).length; i++) {
+        let curr_persona_name = Object.keys(personas)[i];
+        let curr_persona = personas[curr_persona_name];
+        curr_persona.body.x = movement_target[curr_persona_name][0];
+        curr_persona.body.y = movement_target[curr_persona_name][1];
+      }
+      execute_count = execute_count_max + 1;
+      step = step + 1;
+
+      // Loop back to start when simulation ends
+      if (step >= total_steps) {
+        step = 0;
+      }
+
+      start_datetime = new Date(start_datetime.getTime() + step_size);
+    }
+
+    // Only decrement execute_count if not paused
+    if (!kiosk_paused) {
+      execute_count -= 1;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // SHARED HELPERS (copied verbatim from main_script)
+  // -------------------------------------------------------------------------
+  function updatePersonaState(sprite, payload) {
+    if (payload["alive"]) {
+      sprite.setAlpha(1);
+      let stress = payload["stress"] || 0;
+      let fear   = payload["fear"]   || 0;
+      if      (stress >= 40 || fear >= 45) sprite.setTint(0xff6b6b);
+      else if (stress >= 15 || fear >= 20) sprite.setTint(0xffd166);
+      else                                 sprite.clearTint();
+    } else {
+      sprite.setTint(0x777777);
+      sprite.setAlpha(0.55);
+    }
+  }
+
+  function syncGhostMarkers(scene, ghosts) {
+    let liveGhostIds = {};
+    for (let i = 0; i < ghosts.length; i++) {
+      let ghostId = ghosts[i]["ghost_id"];
+      liveGhostIds[ghostId] = true;
+      if (!(ghostId in ghost_markers)) {
+        ghost_markers[ghostId] = scene.add.text(0, 0, "👻", {
+          font: "22px monospace", padding: {x: 2, y: 2}
+        }).setDepth(4);
+      }
+      ghost_markers[ghostId].x = ghosts[i]["location"][0] * tile_width + 8;
+      ghost_markers[ghostId].y = ghosts[i]["location"][1] * tile_width - 2;
+      ghost_markers[ghostId].setVisible(true);
+    }
+    for (const ghostId in ghost_markers) {
+      if (!(ghostId in liveGhostIds)) ghost_markers[ghostId].setVisible(false);
+    }
+  }
+
+  function drawEmotionHUD(gfx, sprite, affect_data, payload, cond_d) {
+    if (!gfx) return;
+    gfx.clear();
+    if (!sprite) return;
+    if (payload && payload["alive"] === false) {
+      gfx.fillStyle(0x555555, 0.5);
+      gfx.fillRect(Math.round(sprite.body.x), Math.round(sprite.body.y - 28), 40, 6);
+      return;
+    }
+    var labels   = cond_d ? EMOTION_LABELS_D : EMOTION_LABELS_STANDARD;
+    var bar_w    = 5, bar_gap = 2, bar_max_h = 18;
+    var total_w  = labels.length * (bar_w + bar_gap) - bar_gap;
+    var base_x   = Math.round(sprite.body.x + sprite.displayWidth / 2 - total_w / 2);
+    var base_y   = Math.round(sprite.body.y - 50);
+    gfx.fillStyle(0x000000, 0.45);
+    gfx.fillRect(base_x - 2, base_y - 2, total_w + 4, bar_max_h + 4);
+    var av = (affect_data && affect_data["affect_vector"]) ? affect_data["affect_vector"] : affect_data;
+    for (var i = 0; i < labels.length; i++) {
+      var key   = labels[i];
+      var val   = Math.max(0, Math.min(1, parseFloat(av ? av[key] : 0) || 0));
+      var h     = Math.max(1, Math.round(val * bar_max_h));
+      var color = EMOTION_COLORS[key] || 0xcccccc;
+      var bx    = base_x + i * (bar_w + bar_gap);
+      gfx.fillStyle(0x333333, 0.7); gfx.fillRect(bx, base_y, bar_w, bar_max_h);
+      gfx.fillStyle(color, 0.9);    gfx.fillRect(bx, base_y + bar_max_h - h, bar_w, h);
+    }
+  }
+
+  function updateStepDisplay(current_step, total) {
+    var el = document.getElementById("ghost-step-counter");
+    if (el) el.textContent = "Step " + current_step + " / " + total;
+    var bar = document.getElementById("ghost-scrub-bar");
+    if (bar) { bar.max = total; bar.value = current_step; }
+  }
+
+</script>

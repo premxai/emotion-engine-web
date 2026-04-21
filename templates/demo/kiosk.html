@@ -1,0 +1,154 @@
+{% load staticfiles %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Ghost Town — Emotion Engine Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%;
+      background: #000;
+      overflow: hidden;
+      touch-action: none;
+    }
+    #game-container {
+      width: 100vw;
+      height: 100vh;
+      display: block;
+    }
+    #game-container canvas {
+      display: block;
+      position: absolute;
+      top: 0; left: 0;
+    }
+
+    /* Minimal HUD overlay */
+    #kiosk-hud {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      pointer-events: none;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.65) 0%, transparent 100%);
+    }
+    #back-btn {
+      pointer-events: all;
+      background: rgba(0,0,0,0.55);
+      border: 1px solid rgba(255,255,255,0.18);
+      color: #fff;
+      font-size: 18px;
+      width: 38px; height: 38px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      text-decoration: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #kiosk-time {
+      font-size: 13px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.85);
+      letter-spacing: 0.3px;
+      background: rgba(0,0,0,0.45);
+      padding: 5px 10px;
+      border-radius: 20px;
+    }
+    #kiosk-step {
+      font-size: 11px;
+      color: rgba(255,255,255,0.55);
+      background: rgba(0,0,0,0.45);
+      padding: 5px 9px;
+      border-radius: 20px;
+    }
+
+    /* Tap-to-pause hint */
+    #tap-hint {
+      position: fixed;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 11px;
+      color: rgba(255,255,255,0.4);
+      background: rgba(0,0,0,0.35);
+      padding: 5px 12px;
+      border-radius: 20px;
+      pointer-events: none;
+      z-index: 100;
+      white-space: nowrap;
+    }
+
+    /* Paused banner */
+    #paused-banner {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 22px;
+      font-weight: 800;
+      color: #fff;
+      background: rgba(0,0,0,0.65);
+      padding: 14px 28px;
+      border-radius: 14px;
+      pointer-events: none;
+      z-index: 200;
+      display: none;
+      letter-spacing: 1px;
+    }
+
+    /* Hidden DOM elements that main_script references */
+    #game-time-content, #world-status-content,
+    #ghost-step-counter, #ghost-scrub-bar,
+    #ghost-event-log, #temp_focus,
+    #play_button, #pause_button { display: none; }
+  </style>
+</head>
+<body>
+
+  <div id="kiosk-hud">
+    <a href="/poster/" id="back-btn" title="Back">&#8592;</a>
+    <span id="kiosk-time">Loading...</span>
+    <span id="kiosk-step">Step 0</span>
+  </div>
+
+  <div id="tap-hint">Tap to pause &nbsp;&middot;&nbsp; Drag to pan</div>
+  <div id="paused-banner">PAUSED</div>
+
+  <div id="game-container"></div>
+
+  <!-- Hidden stubs so kiosk_script doesn't break on DOM lookups -->
+  <span id="game-time-content"></span>
+  <span id="world-status-content"></span>
+  <span id="ghost-step-counter"></span>
+  <input id="ghost-scrub-bar" type="range" style="display:none">
+  <div id="ghost-event-log" style="display:none"></div>
+  <div id="temp_focus" style="display:none"></div>
+  <button id="play_button" style="display:none"></button>
+  <button id="pause_button" style="display:none"></button>
+
+  {% for p in persona_names %}
+  <span id="quick_emoji-{{p.underscore}}" style="display:none"></span>
+  <span id="current_action__{{p.underscore}}" style="display:none"></span>
+  <span id="target_address__{{p.underscore}}" style="display:none"></span>
+  <span id="alive__{{p.underscore}}" style="display:none"></span>
+  <span id="goal__{{p.underscore}}" style="display:none"></span>
+  <span id="stress_fear__{{p.underscore}}" style="display:none"></span>
+  <span id="chat__{{p.underscore}}" style="display:none"></span>
+  {% endfor %}
+
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.js"></script>
+  {% include 'demo/kiosk_script.html' %}
+
+  <script>
+    // Mirror game-time-content updates to the kiosk HUD
+    var _origTimeEl = document.getElementById("game-time-content");
+    var _kioskTime = document.getElementById("kiosk-time");
+    var _observer = new MutationObserver(function() {
+      _kioskTime.textContent = _origTimeEl.textContent || _origTimeEl.innerHTML || "—";
+    });
+    _observer.observe(_origTimeEl, { childList: true, subtree: true, characterData: true });
+  </script>
+</body>
+</html>
