@@ -629,7 +629,7 @@
       gfx.fillRect(Math.round(sprite.body.x), Math.round(sprite.body.y - 28), 40, 6);
       return;
     }
-    var labels   = cond_d ? EMOTION_LABELS_D : EMOTION_LABELS_STANDARD;
+    var labels   = EMOTION_LABELS_STANDARD;
     var bar_w    = 5, bar_gap = 2, bar_max_h = 18;
     var total_w  = labels.length * (bar_w + bar_gap) - bar_gap;
     var base_x   = Math.round(sprite.body.x + sprite.displayWidth / 2 - total_w / 2);
