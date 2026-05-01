@@ -10,13 +10,19 @@
   let step_size = {{sec_per_step}} * 1000;
   let worldConfig = {{ world_config_json|safe }};
 
+  // Force Canvas renderer on Android to avoid WebGL tileset black-tile bug.
+  // iOS / desktop keep WebGL for full visual fidelity.
+  const _isAndroid = /android/i.test(navigator.userAgent);
+  const _rendererType = _isAndroid ? Phaser.CANVAS : Phaser.AUTO;
+
   // Full-screen responsive Phaser config — no fixed width/height
   const config = {
-    type: Phaser.AUTO,
+    type: _rendererType,
     width: window.innerWidth,
     height: window.innerHeight,
     parent: "game-container",
     pixelArt: true,
+    roundPixels: true,
     physics: {
       default: "arcade",
       arcade: { gravity: { y: 0 } }
